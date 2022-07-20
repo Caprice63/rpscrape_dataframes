@@ -9,19 +9,19 @@ from lxml import html
 from orjson import loads, dumps
 from re import search
 
-#from utils.going import get_surface
+from utils.going import get_surface
 from utils.header import RandomHeader
-#from utils.lxml_funcs import find
-#from utils.region import get_region
+from utils.lxml_funcs import find
+from utils.region import get_region
 
 import time
 from bs4 import BeautifulSoup
 import pandas as pd
 import shutil
 import datetime
+from typing import Text
 
 random_header = RandomHeader()
-
 date_ext = "tomorrow"
 date = "-"
 
@@ -112,7 +112,7 @@ def get_going():
     url = f'https://www.racingtv.com/racecards/{date_ext}'
     
     try:
-        res = requests.get(url, headers = headersrtv)
+        res = requests.get(url, headers=random_header.header())
     except:
         print('Date or Connection error occured! \nTry again!!')
         return
@@ -131,7 +131,7 @@ def get_going():
         })
     
     df_race = pd.DataFrame(race_data)
-    df_race['Course'] = df_race['Course'].str.replace('Hamilton Park', 'Hamilton')    #Replace Course names
+    df_race['course'] = df_race['course'].str.replace('Hamilton Park', 'Hamilton')    #Replace Course names
     
     df = df_race
     
@@ -140,7 +140,7 @@ def get_going():
 def get_nr(date=None):
     
     url = f'https://www.sportinglife.com/racing/non-runners'
-    resp = requests.get(url,headers=headers)
+    resp = requests.get(url,headers=random_header.header())
 
     soup = BeautifulSoup(resp.text,'html.parser')
 
@@ -150,14 +150,14 @@ def get_nr(date=None):
 
     for nr in nr_horse:
         horsename = get_text(nr).split(maxsplit=1)[1]
+        #horse = clean_name(horse)
         #horsename = nr.split(maxsplit=1)[1]
-        item = {'HorseName':horsename}
+        item = {'horse':horsename}
         rows.append(item)
         continue
 
     df = pd.DataFrame(rows)
-    df['HorseName'] = df['HorseName'].str.upper()
-    df['HorseName'] = df['HorseName'].str.replace("'",'')
+    df['horse'] = clean_name(df['horse'])
     
     #save_excel(df, main_word = r'Racecards\NonRunners', date=date)
 
@@ -167,7 +167,7 @@ def get_travel(date=None):
     
     travel_list = []
     url = "https://www.skysports.com/racing/hints-and-pointers/longest-travellers"
-    res = requests.get(url, headers = headers)
+    res = requests.get(url, headers=random_header.header())
     #soup = BeautifulSoup(res.content, 'lxml')
     soup = BeautifulSoup(res.content, "html.parser")
     rows = soup.find_all('tr')[1:]
@@ -175,7 +175,7 @@ def get_travel(date=None):
     for row in rows:
         travel_dict = {}
         travel_dict['Horse'] = get_text(row.td).split('(')[0].strip()
-        
+        #horse = clean_name(horse)
         travel_dict['Wins'] = get_text(row.find_all('td')[1])
         travel_dict['WinPct'] = get_text(row.find_all('td')[3])
         travel_dict['Places'] = get_text(row.find_all('td')[4])
@@ -192,7 +192,7 @@ def get_aids(date=None):
     
     aids_list = []
     url = "https://www.skysports.com/racing/hints-and-pointers/first-time-blinkers"
-    res = requests.get(url, headers = headers)
+    res = requests.get(url, headers=random_header.header())
     #soup = BeautifulSoup(res.content, 'lxml')
     soup = BeautifulSoup(res.content, "html.parser")
     rows = soup.find_all('tr')[1:]
@@ -200,7 +200,7 @@ def get_aids(date=None):
     for row in rows:
         aids_dict = {}
         aids_dict['Horse'] = get_text(row.td).split('(')[0].strip()
-        
+        #horse = clean_name(horse)
         aids_dict['Wins'] = get_text(row.find_all('td')[1])
         aids_dict['WinPct'] = get_text(row.find_all('td')[3])
         aids_dict['Places'] = get_text(row.find_all('td')[4])
@@ -213,16 +213,33 @@ def get_aids(date=None):
         
     return aids_list
 
-def get_rtv_odds(ext = ''):
-    global date
-    global date_ext
-    global race_cnt
-    odds_date = date_ext
+def get_sl_odds(ext):
+    odd_list = []
+    url =  'https://www.sportinglife.com/racing/abc-guide/'  + ext
+    #   url = 'https://www.skysports.com/racing/abc-entries-guide/' + ext
+    res = requests.get(url, headers=random_header.header())
+    soup = BeautifulSoup(res.content, "html.parser")
+    rows = soup.find_all('tr')[1:]
     
+    for row in rows:
+        odd_dict = {}
+        odd_dict['horse'] = get_text(row.td).split('(')[0].strip()
+        odd_dict['horse'] = clean_name(odd_dict['horse'])
+        
+        odd_dict['odds'] = get_text(row.find_all('th')[0])
+
+        odd_list.append(odd_dict)
+
+        #print(odd_dict)
+        
+    return odd_list
+
+def get_rtv_odds(ext = ''):
+
     url = f'https://www.racingtv.com/racecards/{date_ext}'
     
     try:
-        res = requests.get(url, headers = headersrtv)
+        res = requests.get(url, headers=random_header.header())
     except:
         print('Date or Connection error occured! \nTry again!!')
         return
@@ -270,6 +287,7 @@ def get_rtv_odds(ext = ''):
         racetime = mtm.text
         href = mtm.attrs
         htxt = Text(href)
+        #htxt = (href).text.strip()
         url_race = htxt.partition("/")[2]
         url_race = "/" + url_race.rpartition("'")[0]
         print(cnt01, racetime, url_race)
@@ -280,17 +298,43 @@ def get_rtv_odds(ext = ''):
             break
     
     df_race = pd.DataFrame(race_data)
-    df_race['Horse'] = df_race['Horse'].str.title()
-    df_race = df_race[df_race.Odds != ""] #remove rows where odds = blank
+    df_race['horse'] = df_race['horse'].str.title()
+    df_race = df_race[df_race.odds != ""] #remove rows where odds = blank
     
-   
     print(df_race)
     
-    df = df_race
-
-    save_excel(df, main_word='Racecards\RacecardsOdds', date=date)
+    #save_excel(df, main_word='Racecards\RacecardsOdds', date=date)
+    save_excel(df_race, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RacecardsOdds', date=date)
     
-    return race_data
+    return df_race
+
+def get_rtv_data(url_ext, date, racetime):
+
+    base_url = 'https://www.racingtv.com'
+    url = base_url + url_ext
+
+    final_list = []
+    resp = requests.get(url,headers=random_header.header())
+  
+    soup = BeautifulSoup(resp.text,'html.parser')
+    table = soup.find('div',{'class':'page__content__section racecard'})
+    
+    for row in table.find_all('div',class_='racecard__runner--content'):
+        try:
+            last_days_ugly = row.find('div',class_='racecard__runner__name').find('a').find('sup').text
+            horse_name = row.find('div',class_='racecard__runner__name').find('a').text.strip().replace(last_days_ugly,'')
+            horse = horse_name.split('(')[0].strip()
+            horse = clean_name(horse)
+            horse = horse.title()
+            odds = row.find('div',class_='racecard__runner__column--price').getText()
+        except AttributeError: #skip blank starting gates
+            continue
+      
+        final_list.append({
+            'horse':horse,
+            'odds':odds})  
+        
+    return final_list
 
 def save_excel(df, main_word, date=None):
     print('Saving data in excel files')
@@ -305,74 +349,23 @@ def save_excel(df, main_word, date=None):
     menu()
     return
 
-
-def get_racecards_data(base_url):    # , date):  # this is copied from RC_menu_V03_RTV.py 
-    racecards_list = []
-    res = requests.get(base_url, headers=random_header.header())
-    soup = BeautifulSoup(res.content, "html.parser")
-    #race_id = base_url.split('/')[7]
-    course = get_text(soup.find('h1',class_='ui-h1 RC-courseHeader__name')).strip()
-    inforow = soup.find_all('div', class_='RC-headerBox__infoRow__content')
-    value = get_text(inforow[0]).strip()
-    runner_num = get_text(inforow[1]).split(' ')[0].strip()
-    going = get_text(inforow[2]).strip()
-    stalls = get_text(inforow[3]).strip()
-    hrs, mnt = get_text(soup.find('span',class_='RC-courseHeader__time')).split(':')
-    if int(hrs) == 12 or int(hrs) == 11:
-        hrs = str(int(hrs) - 12)
-    time = f'{int(hrs)+12}:{mnt}'
-
-    dist = get_text(soup.find('strong',class_='RC-cardHeader__distance')).strip()
-    desc = get_text(soup.find('span', {'data-test-selector':'RC-header__raceInstanceTitle'})).strip()
-    
-    try:
-        klass = get_text(soup.find('span', {'data-test-selector':'RC-header__raceClass'})).strip()
-    except:
-        klass = 'not provided'
+def save_excel_date(df, main_word, date=None):
+    print('Saving data in excel files')
 
     try:
-        agelimit = get_text(soup.find('span', {'data-test-selector':'RC-header__rpAges'})).strip()
+        df.to_excel(f'{main_word} {date}.xlsx', index = False)
     except:
-        agelimit = 'not provided'
-        
-    runners = soup.find_all('div', class_='RC-runnerCardWrapper')
+        print(f'{main_word} {date}.xlsx saving failed. You may need to remove or close the existing {main_word} {date}.xlsx')
     
-    for run in runners:
-        no = get_text(run.select_one('.RC-runnerNumber__no'))
-        draw = get_text(run.select_one('.RC-runnerNumber__draw'))[1:-1]
-        form = get_text(run.select_one('.RC-runnerInfo__form'))
-        horse = get_text(run.select_one('.js-bestOddsRunnerHorseName'))
-        age = get_text(run.select_one('.RC-runnerAge'))
-        weight = '-'.join(get_text(run.select_one('.RC-runnerWgt__carried')).split())
-        or_ = get_text(run.select_one('.RC-runnerOr'))
-        jockey = get_text(run.select_one('.RC-runnerInfo_jockey .js-popupLink'))
-        trainer = get_text(run.select_one('.RC-runnerInfo_trainer .js-popupLink'))
-        allow = get_text(run.select_one('.RC-runnerInfo_jockey .RC-runnerInfo__count'))
-        rtf = get_text(run.select_one('.js-RC-runnerInfo_rtf')) # trainer horses on form in 16days
-        ts = get_text(run.select_one('.RC-runnerTs'))
-        rpr = get_text(run.select_one('.RC-runnerRpr'))
-        days = get_text(run.select_one('.RC-runnerStats__lastRun'))
-        aid = get_text(run.select_one('.RC-runnerHeadgearCode'))
-        cdb = ' '.join([get_text(e) for e in run.select('.RC-runnerStats__cdbf')])
-        tips = ' '.join([get_text(e) for e in run.select('.RC-runnerStats__tips')])
-
-       #CANNOT SEEM TO GET odds = get_text(run.select_one('.RC-runnerPriceWrapper .js-PC-subscribed'))
-        
-        try:
-            st, lb = weight.split('-')
-            wtlbs = int(st) * 14 + int(lb)
-        except:
-            wtlbs = None
-        
-        racecards_list.append({'Course': course, 'Going': going, 'Time': time, 'RaceDesc': desc, 'Dist':dist,
-                                'Class': klass, 'AgeLimit': agelimit, 'Value': value, 'Run': runner_num, 
-                                'StallPos': stalls, 'Tips': tips,
-                                'No': no, 'Draw': draw, 'Form': form, 'Horse': horse, 'Age': age, 'Weight': weight,
-                                'OR': or_, 'Jockey': jockey, 'Trainer': trainer, 'Allow': allow, 'RTF': rtf, 'TS': ts,
-                                'RPR': rpr, 'Days': days, 'Aid': aid, 'WtLbs': wtlbs, 'CDB': cdb, 'RaceURL': base_url}) # 'Date': date, 'Odds': odds
-        
-        
-    return racecards_list
+    try:
+        df.to_excel(f'{main_word}.xlsx', index = False)
+    except:
+        print(f'{main_word}.xlsx saving failed. You may need to remove or close the existing {main_word}.xlsx')
+    
+    print(main_word, ": ",'Saved')
+    time.sleep(3)
+    menu()
+    return
 
 
 def clean_name(name):
@@ -394,6 +387,43 @@ def distance_to_furlongs(distance):
         dist = dist.strip('f')
 
     return float(dist)
+
+
+def distance_to_yards(dist):
+    #dist = distance.strip().replace('¼', '.25').replace('½', '.5').replace('¾', '.75')
+    yards = 0
+    mf = 0
+    flgs = 0
+    mls = 0
+    if 'm' in dist:
+        if len(dist) > 2:
+            if 'y' in dist:
+                dist = dist[:-1]
+                if 'f' in dist:
+                    yards = float(dist.split('f')[1].strip('f'))
+                    mf = dist.split('f')[0].strip('f')
+                    flgs = float(mf.split('m')[1].strip('m'))
+                    mls = float(mf.split('m')[0].strip('m'))
+                else:
+                    yards = float(dist.split('m')[1].strip('m'))
+                    mls = float(dist.split('m')[0].strip('m'))
+            else:
+                dist = dist[:-1]
+                flgs = float(dist.split('m')[1].strip('m'))
+                mls = float(dist.split('m')[0].strip('m'))
+        else:
+            mls = int(dist.split('m')[0]) * 8
+
+    else:
+        if 'y' in dist:
+            dist = dist[:-1]
+            yards = float(dist.split('f')[1].strip('f'))
+            flgs = float(dist.split('f')[0].strip('f'))
+        else:
+            flgs = float(dist.strip('f'))
+
+    yards = (mls * 8 + flgs) * 220 + yards
+    return float(yards)
 
 
 def get_going_info(session, date):
@@ -455,7 +485,7 @@ def get_race_type(doc, race, distance):
         return race_type
 
 
-def get_race_urls_old(session, racecard_url):
+def get_race_urls(session, racecard_url):
     r = session.get(racecard_url, headers=random_header.header())
     doc = html.fromstring(r.content)
 
@@ -468,40 +498,6 @@ def get_race_urls_old(session, racecard_url):
                 race_urls.append('https://www.racingpost.com' + race.attrib['href'])
 
     return sorted(list(set(race_urls)))
-
-
-def get_meetings(session):       # was def get_race_urls(session, racecard_url):
-    racecard_url = f'https://www.racingpost.com/racecards/{date_ext}'
-    r = session.get(racecard_url, headers=random_header.header())
-    doc = html.fromstring(r.content)
-
-    #race_urls = []
-    race_data = []  # RC_menu_V03_RTV.py
-
-    for meeting in doc.xpath("//section[@data-accordion-row]"):
-        course = meeting.xpath(".//span[contains(@class, 'RC-accordion__courseName')]")[0]
-        if valid_course(course.text_content().strip().lower()):
-            for race in meeting.xpath(".//a[@class='RC-meetingItem__link js-navigate-url']"):
-                #race_urls.append('https://www.racingpost.com' + race.attrib['href'])
-                race_data.extend(get_racecards_data('https://www.racingpost.com' + race.attrib['href']))
-                #time.sleep(1)
-            #print(f"Meeting {race_urls.split('/')[3]} scraping completed") #try to print when each course if scraped
-    
-    df_race = pd.DataFrame(race_data)
-    df_race = df_race[df_race.No != "NR"] #remove rows where No = NR
-    df_race.drop_duplicates(subset="Horse", keep="first", inplace=True)
-    df_race.set_index('Horse')
-
-
-    # if not os.path.exists('../racecards'):
-    #     os.makedirs(f'../racecards')
-
-    # with open(f'../racecards/{date}.json', 'w', encoding='utf-8') as f:
-    #     f.write(dumps(races).decode('utf-8'))
-
-    df_race.to_excel(r'C:\Users\chris\Documents\UKHR\PythonSand\df_race_data.xlsx')
-
-    return
 
 
 def get_runners(session, profile_urls):
@@ -611,9 +607,12 @@ def get_runners(session, profile_urls):
                 quote['distance_f'] = q['distanceFurlong']
                 quote['distance_y'] = q['distanceYard']
                 quote['quote'] = q['notes']
+                runner['distance_f'] = q['distanceFurlong']
+                runner['distance_y'] = q['distanceYard']
                 quotes.append(quote)
 
             runner['quotes'] = quotes
+            
 
         runner['stable_tour'] = None
 
@@ -651,33 +650,76 @@ def parse_races(session, race_urls, date):
 
     going_info = get_going_info(session, date)
 
+    racecards_list = []
+
     for url in race_urls:
         r = session.get(url, headers=random_header.header())
         doc = html.fromstring(r.content)
+
+        df_doc = pd.DataFrame(r)
+
+    #    save_excel_date(df_doc, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RC_doc', date=date)
+                
 
         race = {}
 
         url_split = url.split('/')
 
+        race['course_id'] = int(url_split[4])
+        race['region'] = get_region(str(race['course_id']))
+
+        if (race['region'] != 'GB' and race['region'] != 'IRE'):
+            continue
+
         race['race_id'] = int(url_split[7])
         race['date'] = url_split[6]
-        race['course_id'] = int(url_split[4])
+        
         race['course'] = find(doc, 'h1', 'RC-courseHeader__name')
+
         race['off_time'] = find(doc, 'span', 'RC-courseHeader__time')
+        hrs, mnt = race['off_time'].split(':')  # convert time to 24hr
+        if (int(hrs) == 12 or int(hrs) == 11):
+            hrs = str(int(hrs) - 12)
+        race['off_time'] = f'{int(hrs)+12}:{mnt}'
+
         race['race_name'] = find(doc, 'span', 'RC-header__raceInstanceTitle')
+
+        # create a Handicap/Maiden/Amateur/Novice column for use with lookups etc
+        race['race_name_up'] = race['race_name'].upper()
+        if 'HANDICAP' in race['race_name_up']: 
+            race['hc'] = "HCap"
+        else:
+            race['hc'] = None
+
+        if 'MAIDEN' in race['race_name_up']: 
+            race['maid'] = "Mdn"
+        else:
+            race['maid'] = None
+
+        if 'AMATEUR' in race['race_name_up']: 
+            race['am'] = "Am"
+        else:
+            race['am'] = None
+
+        if 'NOVICE' in race['race_name_up']: 
+            race['nov'] = "Nov"
+        else:
+            race['nov'] = None
+
         race['distance_round'] = find(doc, 'strong', 'RC-header__raceDistanceRound')
         race['distance'] = find(doc, 'span', 'RC-header__raceDistance')
         race['distance'] = race['distance_round'] if not race['distance'] else race['distance'].strip('()')
         race['distance_f'] = distance_to_furlongs(race['distance_round'])
-        race['region'] = get_region(str(race['course_id']))
+        race['yards'] = distance_to_yards(race['distance'])
+        
         race['pattern'] = get_pattern(race['race_name'].lower())
         race['race_class'] = find(doc, 'span', 'RC-header__raceClass')
-        race['race_class'] = race['race_class'].strip('()') if race['race_class'] else ''
+        race['race_class'] = race['race_class'].strip('()') if race['race_class'] else '0'
         race['type'] = get_race_type(doc, race['race_name'].lower(), race['distance_f'])
 
         if not race['race_class']:
             if race['pattern']:
-                race['race_class'] = 'Class 1'
+                race['race_class'] = was = 'Class 1'
 
         try:
             band = find(doc, 'span', 'RC-header__rpAges').strip('()').split()
@@ -693,6 +735,32 @@ def parse_races(session, race_urls, date):
 
         prize = find(doc, 'div', 'RC-headerBox__winner').lower()
         race['prize'] = prize.split('winner:')[1].strip() if 'winner:' in prize else None
+        if (('£' in race['prize']) | ('€' in race['prize'])) :
+            race['prize'] = race['prize'][1:].strip()
+        else:
+            None
+
+        race['prize'] = race['prize'].replace(',', '')
+
+        if ('lass' in race['race_class']) :
+            race['race_class'] = race['race_class'][6:].strip()
+        else:
+            None
+        
+        if int(race['race_class']) == 0:   # assign a Class to IRE if no class
+            if int(race['prize']) > 13000:
+                race['race_class'] = "1"
+            elif int(race['prize']) > 10000:
+                race['race_class'] = "2"
+            elif int(race['prize']) > 8000:
+                race['race_class'] = "3"
+            elif int(race['prize']) > 5000:
+                race['race_class'] = "4"
+            elif int(race['prize']) > 2000:
+                race['race_class'] = "5"
+            else:
+                race['race_class'] = "6"
+
         field_size = find(doc, 'div', 'RC-headerBox__runners').lower()
         if field_size:
             race['field_size'] = int(field_size.split('runners:')[1].split('(')[0].strip())
@@ -744,6 +812,7 @@ def parse_races(session, race_urls, date):
                 runners[horse_id]['sex_code'] = sex[1].capitalize()
 
                 runners[horse_id]['trainer'] = find(horse, 'a', 'RC-cardPage-runnerTrainer-name', attrib='data-order-trainer')
+                runners[horse_id]['trainer'] = clean_name(runners[horse_id]['trainer'])
 
             runners[horse_id]['number'] = int(find(horse, 'span', 'RC-cardPage-runnerNumber-no', attrib='data-order-no'))
 
@@ -754,6 +823,37 @@ def parse_races(session, race_urls, date):
 
             runners[horse_id]['headgear'] = find(horse, 'span', 'RC-cardPage-runnerHeadGear')
             runners[horse_id]['headgear_first'] = find(horse, 'span', 'RC-cardPage-runnerHeadGear-first')
+
+            try:
+                runners[horse_id]['odds'] = find('div', class_='RC-runnerRowPriceWrapper').find('a').text.strip()
+                
+            except TypeError:
+                runners[horse_id]['odds'] = None
+
+            try:
+                runners[horse_id]['odds'] = find(horse, 'div', 'data-diffusion-next-price')
+            except TypeError:
+                runners[horse_id]['odds'] = None
+
+            try: 
+                runners[horse_id]['tips'] = find(horse, 'div', 'RC-cardPage-runnerStats-tips').split(' ')[0].strip()
+            except TypeError:
+                runners[horse_id]['tips'] = None
+
+            try:
+                runners[horse_id]['cd'] = find(horse, 'div', 'RC-cardPage-runnerStats-cd')
+            except TypeError:
+                runners[horse_id]['cd'] = None
+
+            try:
+                runners[horse_id]['d'] = find(horse, 'div', 'RC-cardPage-runnerStats-d')
+            except TypeError:
+                runners[horse_id]['d'] = None
+
+            try:
+                runners[horse_id]['bf'] = find(horse, 'div', 'RC-cardPage-runnerStats-bf')
+            except TypeError:
+                runners[horse_id]['bf'] = None
 
             try:
                 runners[horse_id]['lbs'] = int(find(horse, 'span', 'RC-cardPage-runnerWgt-carried', attrib='data-order-wgt'))
@@ -779,14 +879,21 @@ def parse_races(session, race_urls, date):
             jockey = find(horse, 'a', 'RC-cardPage-runnerJockey-name', attrib='data-order-jockey')
 
             if jockey:
-                runners[horse_id]['jockey'] = jockey if not claim else jockey + f'({claim})'
+                runners[horse_id]['jockey'] = jockey # no need to add claim here... if not claim else jockey + f'({claim})'
             else:
                 runners[horse_id]['jockey'] = None
+
+            runners[horse_id]['jockey'] = clean_name(runners[horse_id]['jockey'])
 
             try:
                 runners[horse_id]['last_run'] = find(horse, 'div', 'RC-cardPage-runnerStats-lastRun')
             except TypeError:
                 runners[horse_id]['last_run'] = None
+
+            try: 
+                runners[horse_id]['last_run'] = runners[horse_id]['last_run'].split('(')[0].strip()
+            except TypeError:
+                runners[horse_id]['last_run'] = runners[horse_id]['last_run']
 
             runners[horse_id]['form'] = find(horse, 'span', 'RC-cardPage-runnerForm')
 
@@ -795,10 +902,76 @@ def parse_races(session, race_urls, date):
             except TypeError:
                 runners[horse_id]['trainer_rtf'] = None
 
-        race['runners'] = [runner for runner in runners.values()]
-        races[race['region']][race['course']][race['off_time']] = race
+            race['runners'] = [runner for runner in runners.values()]
+            races[race['region']][race['course']][race['off_time']] = race
 
-    return races
+            racecards_list.append({'url': url, 
+                #distanceFurlong = runners[runner['distance_f']],
+                #distanceYard = runners[horse_id]['distance_y'],
+                'race_id' : race['race_id'], 
+                'date' : race['date'], 
+                'course_id' : race['course_id'], 
+                'course' : race['course'], 
+                'region' : race['region'], 
+                'off_time' : race['off_time'], 
+                'race_name' : race['race_name'], 
+                'distance_f' : race['distance_f'], 
+                'distance' : race['distance'],
+                'yards' : race['yards'], 
+                'surface' : race['surface'], 
+                'type' : race['type'], 
+                'race_class' : race['race_class'], 
+                'hc' : race['hc'],
+                'maid' : race['maid'],
+                'am' : race['am'],
+                'nov' : race['nov'],
+                'age_band' : race['age_band'], 
+                'rating_band' : race['rating_band'], 
+                'prize' : race['prize'], 
+                'field_size' : race['field_size'], 
+                'going' : race['going'], 
+                'weather' : race['weather'], 
+                'stalls' : race['stalls'], 
+                'horse_id' : horse_id, 
+                'horse' : runners[horse_id]['name'],
+                'sire' : runners[horse_id]['sire'], 
+                'dam' : runners[horse_id]['dam'], 
+                'age' : runners[horse_id]['age'], 
+                'sex_colour' : runners[horse_id]['colour'], 
+                'sex_code' : runners[horse_id]['sex_code'], 
+                'number' : runners[horse_id]['number'], 
+                'draw' : runners[horse_id]['draw'], 
+                'last_run' : runners[horse_id]['last_run'], 
+                'form' : runners[horse_id]['form'], 
+                'd' : runners[horse_id]['d'], 
+                'cd' : runners[horse_id]['cd'], 
+                'bf' : runners[horse_id]['bf'], 
+                'tips' : runners[horse_id]['tips'],
+                'headgear' : runners[horse_id]['headgear'], 
+                'headgear_first' : runners[horse_id]['headgear_first'], 
+                'lbs' : runners[horse_id]['lbs'], 
+                'claim' : claim, 
+                'ofr' : runners[horse_id]['ofr'], 
+                'rpr' : runners[horse_id]['rpr'], 
+                'ts' : runners[horse_id]['ts'], 
+                'jockey' : runners[horse_id]['jockey'], 
+                'trainer' : runners[horse_id]['trainer'], 
+                'trainer_rtf' : runners[horse_id]['trainer_rtf']
+                })
+    
+
+
+   #     racecards_list.append({'Course': race['course'], 'Jky' : runners[horse_id]['jockey']})
+        # , 'Going': going, 'Time': time, 'RaceDesc': desc, 'Dist':dist,
+        #                         'Class': klass, 'AgeLimit': agelimit, 'Value': value, 'Run': runner_num, 
+        #                         'StallPos': stalls, 'Tips': tips,
+        #                         'No': no, 'Draw': draw, 'Form': form, 'Horse': horse, 'Age': age, 'Weight': weight,
+        #                         'OR': or_, 'Jockey': jockey, 'Trainer': trainer, 'Allow': allow, 'RTF': rtf, 'TS': ts,
+        #                         'RPR': rpr, 'Days': days, 'Aid': aid, 'WtLbs': wtlbs, 'CDB': cdb, 'RaceURL': base_url}) # 'Date': date, 'Odds': odds
+        
+        
+    return racecards_list
+    #return races
 
 
 def valid_course(course):
@@ -807,16 +980,16 @@ def valid_course(course):
 
 
 def main():
-
     global date
     global date_ext
-
+    global race_cnt
+    
     print('UKHR 2022 RATINGS\n')
     print('Please change python script for future years\n\n')
 
     racecard_url = 'https://www.racingpost.com/racecards'
 
-    session = requests.Session()
+    session = requests.Session()        # Requests.session object allows you to persist specific parameters across requests to the same site.
 
     system_time = datetime.datetime.now()
     tom = datetime.date.today() + datetime.timedelta(days=1)
@@ -859,7 +1032,7 @@ def main():
                     #pass
 
                 elif sub_choice == '3': #Choose date for Cards
-                    date = input('Please Provide Date (YYYY-MM-DD) :\n')
+                    date = input('Please Provide Date (YYYY-MM-DD):\n')
                     date_ext = date
                     #pass
 
@@ -870,7 +1043,39 @@ def main():
                     print('\t\tInvalid choice\n\n')
 
   #              clear_odd_nr()
-                get_meetings(session)
+                odds_date = date_ext
+                racecard_url = f'https://www.racingpost.com/racecards/{date_ext}'
+                #racecard_url = 'https://www.racingpost.com/racecards'
+
+                race_urls = get_race_urls(session, racecard_url)
+                races = parse_races(session, race_urls, date)
+
+                df_race = pd.DataFrame(races)
+
+                #race_cnt = df_race[['course'],['off_time']].nunique()                
+                race_cnt = len(set(zip(df_race['course'],df_race['off_time'])))
+                
+                if ((odds_date == '')|(odds_date == 'tomorrow')):
+                    df_odd = pd.DataFrame(get_sl_odds(odds_date))
+                    df_odd.set_index('horse')
+                    df_race = df_race.merge(df_odd, on = ['horse'], how='left')
+
+                else:
+                    print('Odds were not scraped \nSelect td (for today) or tm (for tomorrow) odds scraping')
+                                                
+                #df_race = df_race[df_race.No != "NR"] #remove rows where No = NR
+                #df_race.drop_duplicates(subset="Horse", keep="first", inplace=True)
+                #df_race.set_index('Horse')
+
+                # if not os.path.exists('../racecards'):
+                #     os.makedirs(f'../racecards')
+
+                # with open(f'../racecards/{date}.json', 'w', encoding='utf-8') as f:
+                #     f.write(dumps(races).decode('utf-8'))
+
+                #save_excel_date(races, main_word='Racecards\Racecards', date=date)
+                save_excel(df_race, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\Racecards', date=date)
+                # C:\Users\chris\Documents\UKHR\PythonSand\racecards
                 
                 break
         
@@ -893,11 +1098,11 @@ def main():
                 else:
                     print('\tInvalid choice\n\n')
 
-                df = pd.DataFrame(get_rtv_odds())
-                save_excel(df, main_word='Racecards\RacecardsOdds', date=date)
+                df = pd.DataFrame(get_sl_odds(date_ext))
+                save_excel(df, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RacecardsOdds', date=date)
 
                 print("Odds File Saved\n\n")
-                time.sleep(2) #pause for 1 sec
+                time.sleep(0.5) #pause for x sec
                 break
                 
         elif choice == '3': #Scrape Race Results
@@ -935,17 +1140,23 @@ def main():
 
                 if sub_choice == '1': #Non Runners
                     df = pd.DataFrame(get_nr(date=date))
-                    save_excel(df, main_word = r'Racecards\NonRunners', date=date)
+                    #save_excel(df, main_word = r'Racecards\NonRunners', date=date)
+                    save_excel(df, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RacecardsNR', date=date)
+
                     #pass
 
                 elif sub_choice == '2': #Travellers
                     df = pd.DataFrame(get_travel(date=date))
-                    save_excel(df, main_word='Racecards\RC_Travellers', date=date)
+                    #save_excel(df, main_word='Racecards\RC_Travellers', date=date)
+                    save_excel(df, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RacecardsTrvl', date=date)
+
                     #pass
 
                 elif sub_choice == '3': #Aids
                     df = pd.DataFrame(get_aids(date=date))
-                    save_excel(df, main_word='Racecards\RC_Aids', date=date)
+                    #save_excel(df, main_word='Racecards\RC_Aids', date=date)
+                    save_excel(df, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RacecardsAids', date=date)
+
                     #pass
 
                 elif sub_choice == 'm': #Return to Main menu
@@ -977,7 +1188,9 @@ def main():
                     print('\tInvalid choice\n\n')
 
                 df = pd.DataFrame(get_going())
-                save_excel(df, main_word='Racecards\RacecardsGng', date=date)
+                #save_excel(df, main_word='Racecards\RacecardsGng', date=date)
+                save_excel(df, main_word=r'C:\Users\chris\Documents\UKHR\PythonSand\racecards\RacecardsGoing', date=date)
+
                 break
         
         elif choice == '6': #Exit
@@ -987,6 +1200,14 @@ def main():
             print('\tInvalid choice\n\n')
 
     return
+
+
+
+    if not os.path.exists('../racecards'):
+        os.makedirs(f'../racecards')
+
+    with open(f'../racecards/{date}.json', 'w', encoding='utf-8') as f:
+        f.write(dumps(races).decode('utf-8'))
 
 
 if __name__ == '__main__':

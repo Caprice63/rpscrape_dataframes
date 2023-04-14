@@ -5,7 +5,7 @@ import sys
 
 from collections import defaultdict
 from datetime import datetime, timedelta
-from lxml import html
+from lxml import etree, html
 from orjson import loads, dumps
 from re import search
 
@@ -406,8 +406,18 @@ def get_going_info(session, date):
 
     for course in loads(json_str):
         going, rail_movements = parse_going(course['going'])
-        course_id = int(course['raceCardsCourseMeetingsUrl'].split('/')[2])
-        going_info[course_id]['course'] = course['courseName']
+
+        course_id = 0
+        course_name = ''
+
+        if course['courseName'] == 'Belmont At The Big A':
+            course_id = 255
+            course_name = 'Aqueduct'
+        else:
+            course_id = int(course['raceCardsCourseMeetingsUrl'].split('/')[2])
+            course_name = course['courseName']
+
+        going_info[course_id]['course'] = course_name
         going_info[course_id]['going'] = going
         going_info[course_id]['stalls'] = course['stallsPosition']
         going_info[course_id]['rail_movements'] = rail_movements
@@ -543,6 +553,7 @@ def get_runners(session, profile_urls):
         runner['damsire_region'] = js['profile']['damSireCountryOriginCode']
 
         runner['trainer'] = clean_name(js['profile']['trainerName'])
+        runner['trainer_id'] = js['profile']['trainerUid']
         runner['trainer_location'] = js['profile']['trainerLocation']
         runner['trainer_14_days'] = js['profile']['trainerLast14Days']
 
@@ -652,17 +663,33 @@ def parse_races(session, race_urls, date):
     going_info = get_going_info(session, date)
 
     for url in race_urls:
-        r = session.get(url, headers=random_header.header())
-        doc = html.fromstring(r.content)
+        r = session.get(url, headers=random_header.header(), allow_redirects=False)
+
+        if r.status_code != 200:
+            print('Failed to get racecard.')
+            print(f'URL: {url}')
+            print(f'Response: {r.status_code}')
+            continue
+
+        try:
+            doc = html.fromstring(r.content)
+        except etree.ParserError:
+            continue
 
         race = {}
 
         url_split = url.split('/')
 
+        race['course'] = find(doc, 'h1', 'RC-courseHeader__name')
+
+        if race['course'] == 'Belmont At The Big A':
+            race['course_id'] = 255
+            race['course'] = 'Aqueduct'
+        else:
+            race['course_id'] = int(url_split[4])
+
         race['race_id'] = int(url_split[7])
         race['date'] = url_split[6]
-        race['course_id'] = int(url_split[4])
-        race['course'] = find(doc, 'h1', 'RC-courseHeader__name')
         race['off_time'] = find(doc, 'span', 'RC-courseHeader__time')
         race['race_name'] = find(doc, 'span', 'RC-header__raceInstanceTitle')
         race['distance_round'] = find(doc, 'strong', 'RC-header__raceDistanceRound')
@@ -776,12 +803,15 @@ def parse_races(session, race_urls, date):
                 runners[horse_id]['ts'] = None
 
             claim = find(horse, 'span', 'RC-cardPage-runnerJockey-allowance')
-            jockey = find(horse, 'a', 'RC-cardPage-runnerJockey-name', attrib='data-order-jockey')
+            jockey = horse.find('.//a[@data-test-selector="RC-cardPage-runnerJockey-name"]')
 
-            if jockey:
-                runners[horse_id]['jockey'] = jockey if not claim else jockey + f'({claim})'
+            if jockey is not None:
+                jock = jockey.attrib['data-order-jockey']
+                runners[horse_id]['jockey'] = jock if not claim else jock + f'({claim})'
+                runners[horse_id]['jockey_id'] = int(jockey.attrib['href'].split('/')[3])
             else:
                 runners[horse_id]['jockey'] = None
+                runners[horse_id]['jockey_id'] = None
 
             try:
                 runners[horse_id]['last_run'] = find(horse, 'div', 'RC-cardPage-runnerStats-lastRun')
